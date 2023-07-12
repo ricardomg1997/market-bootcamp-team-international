@@ -6,6 +6,7 @@ from config.database import Session
 from models.product import Product as ProductModel
 from fastapi.encoders import jsonable_encoder
 from middlewares.jwt_bearer import JWTBearer
+from redis_cache.crud import delete_hash, save_hash
 from services.product import ProductService
 from schemas.product import Product
 
@@ -19,7 +20,7 @@ def get_products() -> List[Product]:
     return JSONResponse(status_code=200, content=jsonable_encoder(result))
 #Obtener producto por id
 @product_router.get('/products/{id}', tags=['products'], response_model=Product)
-def get_product_by_id(id: int = Path(ge=1, le=2000)) ->     Product:
+def get_product_by_id(id: str) ->     Product:
     db = Session()
     result = ProductService(db).get_product(id)
     if not result:
@@ -38,11 +39,12 @@ def get_products_by_category(category: str = Query(min_length=2, max_length=50))
 @product_router.post('/products', tags=['products'], response_model=dict, status_code=201)
 def create_product(product: Product) -> dict:
     db = Session()
+    save_hash(key=str(product.dict()["id"]), data=product.dict())
     ProductService(db).create_product(product)
     return JSONResponse(status_code=201, content={"message": "Se ha registrado el producto"})
 #Editar Producto
 @product_router.put('/products/{id}', tags=['products'], response_model=dict, status_code=200)
-def update_product(id: int, product: Product)-> dict:
+def update_product(id: str, product: Product)-> dict:
     db = Session()
     result = ProductService(db).get_product(id)
     if not result:
@@ -51,11 +53,14 @@ def update_product(id: int, product: Product)-> dict:
     return JSONResponse(status_code=200, content={"message": "Se ha modificado el producto"})
 #Eliminar producto
 @product_router.delete('/products/{id}', tags=['products'], response_model=dict, status_code=200)
-def delete_product(id: int)-> dict:
+def delete_product(id: str)-> dict:
     db = Session()
-    result = result = ProductService(db).delete_product(id)
+    result = ProductService(db).get_product(id)
+    keys = Product.__fields__.keys()
+    delete_hash(key=id, keys=keys)
     if not result:
         return JSONResponse(status_code=404, content={'message': "No encontrado"})
+    result = ProductService(db).delete_product(id)
     db.delete(result)
     db.commit()
     return JSONResponse(status_code=200, content={"message": "Se ha eliminado el producto"})
